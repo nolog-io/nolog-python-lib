@@ -349,7 +349,9 @@ class Alert():
     self._alert = alert
 
 class Dependency():
-  '''Dependency tracks out-of-process entities (e.g. other services, databases, or agents) that an Objective relies on.'''
+  """
+  Dependency tracks out-of-process entities (e.g. other services, databases, or agents) that an Objective relies on.
+  """
 
   def __init__(self, base_counter:_internal.base_counter):
     self._base_counter = base_counter
@@ -385,12 +387,10 @@ class DependencyTracker():
     self.__tracker = tracker
 
   def Success(self):
-    """Success is used to mark the DependencyTracker as successfully completed.
-
-    Calling Success() or Fail(...) marks this DependencyTracker as closed.
-    The following result in error states that will (1) stop tracking the Objective and (2) Surface an alert on the dashboard whne possible:
-      - Success() or Fail(...) is invoked again on a closed Tracker.
-      - Any tracker is garbage collected without a Success() or Fail(...) call.
+    """
+    Success is used to mark this tracker as successfully completed (including ending early due to bad input or reaching successful completion).
+    Calling Success() or Fail(...) marks this tracker as closed.
+    Forgetting to close or trying to re-close a tracker results in tracking entering an error state.
     """
     if self.__tracker == None:
       _internal._errors.safe_notify(
@@ -403,13 +403,12 @@ class DependencyTracker():
     self.__tracker.safe_success()
 
   def Fail(self, alert: Alert, errorMsg: str):
-    """Fail lets nolog know of the failure and the alert to display on the dashboard. Error messages (max: 1000 chars) passed to Fail() will be sampled
-    before being sent onwards.
-
-    Calling Success() or Fail(...) marks this DependencyTracker as closed.
-    The following result in error states that will (1) stop tracking the Objective and (2) Surface an alert on the dashboard when possible:
-      - Success() or Fail(...) is invoked again on a closed Tracker.
-      - This tracker is garbage collected without a Success() or Fail(...) call."""
+    """
+    Fail is used to mark the tracker as failed using the Alert as the reason.
+    Included error messages (max: 1000 chars) passed to Fail() will be sampled before being sent onwards.
+    Calling Success() or Fail(...) marks this tracker as closed.
+    Forgetting to close or trying to re-close a tracker results in tracking entering an error state.
+    """
     if not type(alert) is Alert:
       _internal._errors.safe_add_error(
         "Invalid API usage detected: alert argument to Fail must be a registered Alert.",
@@ -439,13 +438,10 @@ class ObjectiveTracker():
     self.__tracker = tracker
 
   def Success(self):
-    """Success is used to mark the ObjectiveTracker as successfully completed.
-
-    Calling Success() or Fail(...) marks this ObjectiveTracker as closed.
-    The following result in error states that will (1) stop tracking the Objective and (2) Surface an alert on the dashboard when possible:
-      - Success() or Fail(...) is invoked again on a closed Tracker.
-      - Any dependencies tracking started as part of this objective aren't already closed via Success() or Fail(...) calls.
-      - Any tracker is garbage collected without a Success() or Fail(...) call.
+    """
+    Success is used to mark this tracker as successfully completed (including ending early due to bad input or reaching successful completion).
+    Calling Success() or Fail(...) marks this tracker as closed.
+    Forgetting to close or trying to re-close a tracker results in tracking entering an error state.
     """
     if self.__tracker == None:
       _internal._errors.safe_notify(
@@ -458,14 +454,11 @@ class ObjectiveTracker():
     self.__tracker.safe_success()
 
   def Fail(self, alert: Alert, errorMsg: str):
-    """Fail lets nolog know of the failure and the alert to display on the dashboard. Error messages (max: 1000 chars) passed to Fail() will be sampled
-    before being sent onwards.
-
-    Calling Success() or Fail(...) marks this ObjectiveTracker as closed.
-    The following result in error states that will (1) stop tracking the Objective and (2) Surface an alert on the dashboard when possible:
-      - Success() or Fail(...) is invoked again on a closed Tracker.
-      - Any dependencies tracking started as part of this objective aren't already closed via Success() or Fail(...) calls.
-      - This tracker is garbage collected without a Success() or Fail(...) call.
+    """
+    Fail is used to mark the tracker as failed using the Alert as the reason.
+    Included error messages (max: 1000 chars) passed to Fail() will be sampled before being sent onwards.
+    Calling Success() or Fail(...) marks this tracker as closed.
+    Forgetting to close or trying to re-close a tracker results in tracking entering an error state.
     """
     if not type(alert) is Alert:
       _internal._errors.safe_add_error(
@@ -490,6 +483,9 @@ class ObjectiveTracker():
     self.__tracker.safe_fail(None if alert is None else alert._alert, errorMsg)
 
   def StartDependency(self, dep: Dependency):
+    """
+    Begin tracking the invocation of a dependency.
+    """
     if not type(dep) is Dependency:
       _internal._errors.safe_add_error(
         "Invalid API usage detected: dep argument to StartDependency must be a Dependency.",
@@ -514,61 +510,14 @@ class Objective():
   """Objective represents a monitored service goal.
   Each service goal is registered once via a NoLog.CreateObjective or NoLog.CreateObjective and an
   Objective is returned to be used in code for monitoring.
-
-  ```
-  import nolog
-
-  respondHelloObjective = NoLog.CreateObjective("RespondHello", OptConfigData(
-    AlertCriteriaProvider = NoLog.CreateFailCountCriteriaProvider(1, 6)
-  ))
-
-  def respondHello(name):
-    respondHello = respondHelloObjective.start()
-    result = "Hello " + name + "!"
-    respondHello.success()
-    return result
-  ```
-
-  Any dependencies that the Objective relies on and any alerts that may be surfaced should be defined here as well.
-  ```
-  import nolog
-
-  respondHelloObjective = NoLog.CreateObjective("RespondHello", OptConfigData(
-    AlertCriteriaProvider = NoLog.CreateFailCountCriteriaProvider(1, 6)
-  ))
-  unsupportedNameAlert = respondHelloObjective.WithAlert("Unsupported name, starts with A.")
-  lastNameServiceDep = respondHelloObjective.AddDependency("lastNameService")
-
-  def respondHello(name):
-    respondHello = respondHelloObjective.start()
-    if name.startsWith("a") or name.startsWith("A"):
-            respondHello.Fail(unsupportedNameAlert, name)
-      return ""
-    callLastName = lastNameServiceDep.start()
-    lastName = getLastName(name)
-    callLastName.success()
-    result = "Hello " + name + " " + lastName + "!"
-    respondHello.success()
-    return result
-  ```
   """
 
   def __init__(self, name, base_counter:_internal.base_counter):
     self._base_counter = base_counter
 
   def AddDependency(self, name: str, action: str):
-    """Add a Dependency to this Objective used for tracking.
-    Arguments:
-      - dependency: the name of the dependency (max: 40 chars)
-      - action: 		a description of the the feature of the dependency being relied on. (max: 40 chars)
-
-    The three recommended approaches for action are to either:
-      - 1: Pass in either a simple-descriptor for the work being performed by the dependency
-        * ```AddDependency("AccountAPI", "GetOwnerFromAccount")```
-      - 2: the descriptive HTTP path exposed by the dependency.
-        * ```AddDependency("AccountAPI", "/get-account")```
-      - 3: in the event of a database, the the table name being relied on.
-        * ```AddDependency("MySqlDatabase", "Accounts")```
+    """
+    Add a Dependency (max: 40 chars) to track that is used by this Objective and a short action (max: 40 chars) that describes the usage.
     """
     if not type(name) is str:
       _internal._errors.safe_add_error(
@@ -594,9 +543,9 @@ class Objective():
     return Dependency(dep_counter)
 
   def WithAlert(self, alert: str):
-    """Statically define alerts (max: 200 chars) expected to be triggered when facing problems fulfilling this Objective.
-
-    When calling Fail this Alert will be surfaced in the dashboard along with sampled dynamic content.
+    """
+    Statically define alerts (max: 200 chars) expected to be triggered when facing problems fulfilling this Objective.
+    Objective metadata is automatically added to the Alert and does not need to be included in the actual alert message.
     """
     if not type(alert) is str:
       _internal._errors.safe_add_error(
@@ -826,14 +775,7 @@ class NoLog:
 
   @staticmethod
   def Initialize(serviceId: str, instanceId: str, versionId: str, apiKey: str):
-    """Initialize needs to be called before the program begins monitoring with NoLog.
-
-    Args:
-        serviceId (str): The name or ID of the service being monitored. All instances for the same service should use the same identifier. (max: 40 chars)
-        instanceId (str): A unique instance identifier so two different instances can be differentiated. (max: 40 chars)
-        versionId (str): An ID to track the version of the software running. This is a means to disambiguiate instances running different versions of the code. (max: 10 chars)
-        apiKey (str): NoLog API Key. Use PROD key for Production, DEV Key for Non-Prod, and "" for Local.
-    """
+    """Initialize needs to be called before the program begins monitoring with NoLog."""
     if apiKey is not None and len(apiKey) > 5000:
       apiKey = apiKey[0:5000]
     NoLog.__mutex.acquire()
@@ -954,20 +896,7 @@ class NoLog:
 
   @staticmethod
   def CreateObjective(name: str):
-    """CreateObjective returns an Objective (max: 40 chars) used for monitoring a Service objective.
-    This should be called once to register the Objective:
-    ```
-      import nolog
-
-      respondHelloObjective = NoLog.CreateObjective("RespondHello")
-
-      def respondHello(name):
-        respondHello = respondHelloObjective.start()
-        result = "Hello " + name + "!"
-        respondHello.success()
-        return result
-    ```
-    """
+    """CreateObjective returns an Objective (max: 40 chars) used for monitoring a Service objective."""
     if not type(name) is str:
       _internal._errors.safe_add_error(
         "Invalid API usage detected: name argument to CreateObjective must be a string.",
